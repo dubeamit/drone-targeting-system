@@ -18,7 +18,7 @@ An end-to-end, defense-grade edge AI targeting, 3D ray-projection geolocation, a
 ### 1. Autonomous Target Geolocation & Guided Autopilot Engagement
 *Live MAVLink telemetry ingestion from ArduPilot SITL with automated 3D target coordinate projection, HUD target acquisition, and one-click operator GUIDED strike dispatch.*
 
-https://github.com/user-attachments/assets/demo_qgc_ardupilot.mp4
+https://github.com/user-attachments/assets/567b418e-9d78-4554-bba6-4ca432b4e1e5
 
 > **Demo Walkthrough:**
 > 1. The UAV patrols in `AUTO` / `LOITER` mode at 50m relative altitude, streaming real-time IMU, GPS, and gimbal attitude.
@@ -31,7 +31,7 @@ https://github.com/user-attachments/assets/demo_qgc_ardupilot.mp4
 ### 2. Multi-Domain Tactical HUD & Computer Vision Pipeline
 *Real-time multi-target detection across diverse operational theaters: military flyovers (helicopters & assault aircraft), tactical missile launchers, armored vehicle convoys, and dense urban traffic surveillance.*
 
-https://github.com/user-attachments/assets/demo_targeting_hud.mp4
+https://github.com/user-attachments/assets/a115b557-6f2b-48b4-92d2-96a6154b30d0
 
 > **HUD Capabilities Showcased:**
 > * **Military Corner Reticles (`┌ ┐ └ ┘`):** Minimizes screen clutter by replacing solid opaque boxes with tactical corner brackets.

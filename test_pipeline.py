@@ -214,11 +214,10 @@ def make_ffmpeg_udp_cmd(ffmpeg_bin: str, width: int, height: int, fps: int, udp_
         ]
 
 
-def qgc_output_thread_func(encoder: subprocess.Popen, fps: float, width: int = 1280, height: int = 700):
+def qgc_output_thread_func(encoder: subprocess.Popen, fps: float, width: int = 1280, height: int = 720):
     """
-    Exact output_thread from client qgc/inference_stream.py:
     High-precision monotonic fixed-FPS pusher that repeats the last frame
-    to keep QGroundControl stream alive.
+    to keep QGroundControl stream alive. Automatically formats portrait frames for 16:9 QGC UDP.
     """
     interval = 1.0 / float(fps)
     blank = np.zeros((height, width, 3), dtype=np.uint8)
@@ -230,10 +229,22 @@ def qgc_output_thread_func(encoder: subprocess.Popen, fps: float, width: int = 1
             frame = latest_hud_frame
 
         if frame is None:
-            frame = blank
+            out_frame = blank
+        elif frame.shape[1] != width or frame.shape[0] != height:
+            fh, fw = frame.shape[:2]
+            scale_qgc = min(width / fw, height / fh)
+            nw = int(round(fw * scale_qgc))
+            nh = int(round(fh * scale_qgc))
+            resized_qgc = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_LINEAR)
+            out_frame = np.zeros((height, width, 3), dtype=np.uint8)
+            px = (width - nw) // 2
+            py = (height - nh) // 2
+            out_frame[py:py + nh, px:px + nw] = resized_qgc
+        else:
+            out_frame = frame
 
         try:
-            encoder.stdin.write(frame.tobytes())
+            encoder.stdin.write(out_frame.tobytes())
         except (BrokenPipeError, OSError):
             break
 
@@ -241,74 +252,128 @@ def qgc_output_thread_func(encoder: subprocess.Popen, fps: float, width: int = 1
         stop_event.wait(max(0.0, interval - elapsed))
 
 
-def draw_hud(frame, tel, targets, active_target, banner_text, fps, model_name, is_recording=False):
-    """Draws defense-grade HUD overlay with telemetry and targeting reticles."""
-    h, w = frame.shape[:2]
-    overlay = frame.copy()
+def draw_corner_brackets(img, x1, y1, x2, y2, color, thickness=1, length=9):
+    """Draws sleek military corner brackets instead of solid obstructing rectangles."""
+    bw = x2 - x1
+    bh = y2 - y1
+    l = max(3, min(length, bw // 3, bh // 3))
+    # Top-Left
+    cv2.line(img, (x1, y1), (x1 + l, y1), color, thickness, cv2.LINE_AA)
+    cv2.line(img, (x1, y1), (x1, y1 + l), color, thickness, cv2.LINE_AA)
+    # Top-Right
+    cv2.line(img, (x2, y1), (x2 - l, y1), color, thickness, cv2.LINE_AA)
+    cv2.line(img, (x2, y1), (x2, y1 + l), color, thickness, cv2.LINE_AA)
+    # Bottom-Left
+    cv2.line(img, (x1, y2), (x1 + l, y2), color, thickness, cv2.LINE_AA)
+    cv2.line(img, (x1, y2), (x1, y2 - l), color, thickness, cv2.LINE_AA)
+    # Bottom-Right
+    cv2.line(img, (x2, y2), (x2 - l, y2), color, thickness, cv2.LINE_AA)
+    cv2.line(img, (x2, y2), (x2, y2 - l), color, thickness, cv2.LINE_AA)
 
-    # 1. Top Telemetry Bar
-    bar_h = 42
-    cv2.rectangle(overlay, (0, 0), (w, bar_h), (20, 20, 20), -1)
-    cv2.addWeighted(overlay, 0.75, frame, 0.25, 0, frame)
+
+def draw_hud(frame, tel, targets, active_target, banner_text, fps, model_name, is_recording=False, declutter_mode="TACTICAL", conf_threshold=0.40):
+    """
+    Draws defense-grade HUD overlay with tactical reticles and clean non-colliding typography.
+    Avoids blinding white coordinate blurs by showing target GPS solely on the active locked target.
+    """
+    h, w = frame.shape[:2]
+
+    # 1. Top Telemetry Bar (Dark semi-transparent glassmorphism)
+    bar_h = 36
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (w, bar_h), (12, 16, 20), -1)
+    cv2.addWeighted(overlay, 0.70, frame, 0.30, 0, frame)
 
     source_tag = tel.get("source", "MOCK")
     tel_str = (
-        f"[{model_name}] ALT: {tel['alt_rel']:.1f}m | "
+        f"[{model_name.upper()}] ALT: {tel['alt_rel']:.1f}m | "
         f"PITCH: {tel['gimbal_pitch']:.1f}° | "
         f"HDG: {tel['yaw']:.0f}° | "
-        f"GPS: {tel['lat']:.5f}°, {tel['lon']:.5f}° | "
-        f"TEL: {source_tag} | FPS: {fps:.1f}"
+        f"FPS: {fps:.1f} | CONF: {conf_threshold:.2f} | MODE: {declutter_mode}"
     )
-    cv2.putText(frame, tel_str, (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 200), 2, cv2.LINE_AA)
+    cv2.putText(frame, tel_str, (10, 23), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 200), 1, cv2.LINE_AA)
 
     # Top-Right Recording Indicator
     if is_recording:
-        cv2.circle(frame, (w - 82, 21), 6, (0, 0, 255), -1)
-        cv2.putText(frame, "REC", (w - 70, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.circle(frame, (w - 75, 18), 5, (0, 0, 255), -1)
+        cv2.putText(frame, "REC", (w - 64, 23), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2, cv2.LINE_AA)
 
-    # 2. Draw Bounding Boxes and Ray-Projected Target Info
+    # 2. Draw Targets (Tactical Corner Brackets & Anti-Collision Reticles)
     for t in targets:
         x1, y1, x2, y2 = t["bbox"]
         cls = t["class_name"]
         conf = t["conf"]
         gps = t["gps"]
         dist = t["dist"]
+        bw = x2 - x1
+        bh = y2 - y1
 
         is_locked = (active_target and active_target["bbox"] == t["bbox"])
-        color = (0, 0, 255) if is_locked else (0, 255, 0)
-        thick = 3 if is_locked else 2
 
-        # Draw box
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, thick)
-
-        # Label tag
-        label = f"{cls} {conf*100:.0f}%"
-        if dist is not None:
-            label += f" | {dist:.0f}m"
-        (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(frame, (x1, max(0, y1 - 22)), (x1 + lw + 6, max(22, y1)), color, -1)
-        cv2.putText(frame, label, (x1 + 3, max(16, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-
-        # Draw ground target crosshair and GPS tag below box
-        cx = int((x1 + x2) / 2)
-        by = min(h - 5, y2 + 12)
-        cv2.drawMarker(frame, (cx, y2), color, markerType=cv2.MARKER_CROSS, markerSize=10, thickness=2)
-        if gps:
-            coord_str = f"({gps['lat']:.5f}, {gps['lon']:.5f})"
-            cv2.putText(frame, coord_str, (max(5, cx - 60), by), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
-
-        # If locked, draw crosshair reticle on target center
         if is_locked:
+            # === ACTIVE LOCKED TARGET (Prominent Red Engagement Reticle) ===
+            lock_color = (0, 30, 255)
+            draw_corner_brackets(frame, x1, y1, x2, y2, lock_color, thickness=2, length=14)
+
+            # Central Tracking Circle & Crosshair
             tcx = int((x1 + x2) / 2)
             tcy = int((y1 + y2) / 2)
-            cv2.circle(frame, (tcx, tcy), 24, (0, 0, 255), 2)
-            cv2.putText(frame, "LOCKED", (x1, y2 + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2, cv2.LINE_AA)
+            cv2.circle(frame, (tcx, tcy), 18, lock_color, 2, cv2.LINE_AA)
+            cv2.drawMarker(frame, (tcx, tcy), lock_color, markerType=cv2.MARKER_CROSS, markerSize=12, thickness=1)
+
+            # Top Header Tag
+            top_label = f"LOCKED: {cls.upper()} ({conf*100:.0f}%)"
+            (tw, th), _ = cv2.getTextSize(top_label, cv2.FONT_HERSHEY_SIMPLEX, 0.44, 1)
+            ly1 = max(bar_h + 4, y1 - 24)
+            cv2.rectangle(frame, (x1, ly1), (x1 + tw + 8, ly1 + th + 6), lock_color, -1)
+            cv2.putText(frame, top_label, (x1 + 4, ly1 + th + 2), cv2.FONT_HERSHEY_SIMPLEX, 0.44, (255, 255, 255), 1, cv2.LINE_AA)
+
+            # Bottom GPS Telemetry Tag
+            if gps:
+                coord_str = f"LAT: {gps['lat']:.5f}°  LON: {gps['lon']:.5f}° | RNG: {dist:.0f}m"
+                (cw, ch), _ = cv2.getTextSize(coord_str, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
+                by1 = min(h - 40, y2 + 6)
+                cv2.rectangle(frame, (x1 - 2, by1), (x1 + cw + 8, by1 + ch + 8), (10, 10, 10), -1)
+                cv2.rectangle(frame, (x1 - 2, by1), (x1 + cw + 8, by1 + ch + 8), lock_color, 1)
+                cv2.putText(frame, coord_str, (x1 + 3, by1 + ch + 3), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 255), 1, cv2.LINE_AA)
+
+        else:
+            # === UNLOCKED TARGET (Tactical Corner Brackets & Anti-Collision Tags) ===
+            reticle_color = (0, 240, 170)  # Modern military cyan/emerald
+            draw_corner_brackets(frame, x1, y1, x2, y2, reticle_color, thickness=1, length=8)
+
+            # Decide whether to render text based on declutter mode and object scale
+            should_show_label = False
+            if declutter_mode == "FULL":
+                should_show_label = True
+            elif declutter_mode == "TACTICAL":
+                # Show labels for vehicles, aircraft, artillery, drones, or larger boxes (prevents crowd collisions)
+                is_high_value = any(k in cls for k in ["vehicle", "tank", "helicopter", "airplane", "truck", "drone", "artillery", "carrier"])
+                if is_high_value or bh >= 40:
+                    should_show_label = True
+
+            if should_show_label:
+                # Clean, compact label
+                tag_text = f"{cls} {conf*100:.0f}%"
+                if dist is not None and bh >= 50:
+                    tag_text += f" | {dist:.0f}m"
+                (lw, lh), _ = cv2.getTextSize(tag_text, cv2.FONT_HERSHEY_SIMPLEX, 0.36, 1)
+                ty1 = max(bar_h + 2, y1 - lh - 5)
+
+                # Semi-transparent dark pill background (prevents overlapping solid blocks)
+                sub_w = min(w - x1, lw + 6)
+                sub_h = lh + 4
+                if sub_w > 0 and sub_h > 0 and ty1 + sub_h <= h:
+                    sub = frame[ty1:ty1 + sub_h, x1:x1 + sub_w]
+                    black_rect = np.zeros_like(sub)
+                    cv2.addWeighted(sub, 0.35, black_rect, 0.65, 0, sub)
+                cv2.putText(frame, tag_text, (x1 + 3, ty1 + lh), cv2.FONT_HERSHEY_SIMPLEX, 0.36, reticle_color, 1, cv2.LINE_AA)
 
     # 3. Bottom Status Banner
-    bot_y = h - 14
-    cv2.rectangle(frame, (0, h - 34), (w, h), (15, 15, 15), -1)
-    banner_color = (0, 220, 255) if "LOCKED" in banner_text else (200, 200, 200)
-    cv2.putText(frame, banner_text, (12, bot_y), cv2.FONT_HERSHEY_SIMPLEX, 0.48, banner_color, 1, cv2.LINE_AA)
+    bot_y = h - 10
+    cv2.rectangle(frame, (0, h - 28), (w, h), (12, 16, 20), -1)
+    banner_color = (0, 220, 255) if "LOCKED" in banner_text else (190, 190, 190)
+    cv2.putText(frame, banner_text, (10, bot_y), cv2.FONT_HERSHEY_SIMPLEX, 0.44, banner_color, 1, cv2.LINE_AA)
 
 
 def resolve_video_source(src_input: str) -> str:
@@ -360,7 +425,9 @@ def main():
                         help="Video filename, path, webcam index (0), or RTSP URL. Auto-checks 'videos/' and 'output_video/'.")
     parser.add_argument("--model", default="v9e",
                         help="Model preset ('v9e', '26s', 'v8s') or path to .pt file.")
-    parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold (e.g. 0.25)")
+    parser.add_argument("--conf", type=float, default=0.40, help="Initial confidence threshold (default: 0.40, adjust live with [ and ])")
+    parser.add_argument("--mode", choices=["tactical", "full", "minimal"], default="tactical",
+                        help="HUD Declutter Mode: 'tactical' (clean reticles & vehicle labels), 'minimal' (brackets only), 'full' (all labels)")
     parser.add_argument("--imgsz", type=int, default=1024, help="Inference resolution (e.g. 640 for speed, 1024/1280 for tiny aerial targets)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="Inference device")
     parser.add_argument("--ardupilot", action="store_true", help="Connect live to ArduPilot SITL / MAVProxy on UDP 14551")
@@ -429,8 +496,17 @@ def main():
         print("    To restore GPU instantly, run: sudo rmmod nvidia_uvm && sudo modprobe nvidia_uvm")
         print("!" * 75 + "\n")
 
-    # Standard 16:9 Operator & QGC Display Canvas (1280x720)
-    out_w, out_h = 1280, 720
+    # Adaptive Operator Canvas Resolution:
+    # If video is portrait (in_h > in_w, e.g. 1080x1920), adapt display vertically to fill 100% of window with ZERO black sidebars!
+    if in_h > in_w:
+        out_h = min(in_h, 960)
+        out_w = int(round(in_w * (out_h / in_h)))
+    else:
+        out_w = min(in_w, 1280)
+        out_h = int(round(in_h * (out_w / in_w)))
+
+    # Standard resolution for QGC streaming
+    qgc_w, qgc_h = 1280, 720
 
     # 6. Initialize Camera 3D Ray-Projection (using native camera optical parameters)
     projection = CameraProjection(
@@ -455,11 +531,11 @@ def main():
     qgc_thread = None
     if not args.no_qgc:
         try:
-            cmd = make_ffmpeg_udp_cmd(args.ffmpeg_bin, out_w, out_h, 30, args.udp, mode=args.stream_mode)
+            cmd = make_ffmpeg_udp_cmd(args.ffmpeg_bin, qgc_w, qgc_h, 30, args.udp, mode=args.stream_mode)
             ffmpeg_proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
             qgc_thread = threading.Thread(
                 target=qgc_output_thread_func,
-                args=(ffmpeg_proc, 30.0, out_w, out_h),
+                args=(ffmpeg_proc, 30.0, qgc_w, qgc_h),
                 name="qgc_encoder",
                 daemon=True
             )
@@ -476,10 +552,15 @@ def main():
     cv2.setMouseCallback(window_name, mouse_callback)
 
     print("\nControls:")
-    print("  [Left-Click] Click on any detected object box to select target & send GUIDED waypoint")
-    print("  [Space]      Pause / Resume video")
+    print("  [Left-Click] Select & Lock Target (dispatches GUIDED waypoint)")
+    print("  [D]          Toggle Declutter Mode (TACTICAL -> MINIMAL -> FULL)")
+    print("  [[ / ]]      Decrease / Increase Confidence Threshold (- / +)")
     print("  [R]          Start / Stop Video Recording to output_video/")
+    print("  [Space]      Pause / Resume video")
     print("  [Q / Esc]    Quit test pipeline\n")
+
+    current_conf = float(args.conf)
+    declutter_mode = args.mode.upper()
 
     # 10. Video Recording / Writer
     video_writer = None
@@ -553,7 +634,7 @@ def main():
                 tel = telemetry_client.get_state()
 
                 # 3. Run Native YOLO Inference (avoids aspect-ratio distortion, preserves small targets)
-                results = model.predict(frame, conf=args.conf, imgsz=args.imgsz, device=args.device, verbose=False)
+                results = model.predict(frame, conf=current_conf, imgsz=args.imgsz, device=args.device, agnostic_nms=True, iou=0.45, verbose=False)
 
                 # 4. Process Detections, Map Bounding Boxes to Display Canvas & Compute Ray-Projection GPS
                 new_targets = []
@@ -624,7 +705,7 @@ def main():
 
             # Draw HUD
             hud_frame = canvas.copy()
-            draw_hud(hud_frame, tel, current_targets, active_lock_target, active_banner, fps_display, model_path.stem, is_recording=recording)
+            draw_hud(hud_frame, tel, current_targets, active_lock_target, active_banner, fps_display, model_path.stem, is_recording=recording, declutter_mode=declutter_mode, conf_threshold=current_conf)
 
             # Record frame to file if active
             if recording:
@@ -659,6 +740,23 @@ def main():
                     status_banner = f"REC PAUSED ({recorded_frames} frames)"
                     banner_expiry = time.time() + 4.0
                     print(f"\n⏸️  [REC] Paused recording ({recorded_frames} frames captured)")
+            elif key == ord('[') or key == ord('-'):
+                current_conf = max(0.10, round(current_conf - 0.05, 2))
+                status_banner = f"CONFIDENCE THRESHOLD: {current_conf:.2f}"
+                banner_expiry = time.time() + 3.0
+                print(f"[Controls] Confidence lowered to {current_conf:.2f}")
+            elif key == ord(']') or key == ord('+') or key == ord('='):
+                current_conf = min(0.95, round(current_conf + 0.05, 2))
+                status_banner = f"CONFIDENCE THRESHOLD: {current_conf:.2f}"
+                banner_expiry = time.time() + 3.0
+                print(f"[Controls] Confidence raised to {current_conf:.2f}")
+            elif key == ord('d') or key == ord('D'):
+                modes = ["TACTICAL", "MINIMAL", "FULL"]
+                idx = (modes.index(declutter_mode) + 1) % len(modes)
+                declutter_mode = modes[idx]
+                status_banner = f"HUD DECLUTTER MODE: {declutter_mode}"
+                banner_expiry = time.time() + 3.0
+                print(f"[Controls] HUD Mode changed to: {declutter_mode}")
 
     except KeyboardInterrupt:
         print("\nPipeline interrupted by user.")

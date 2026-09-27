@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-09-27T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram name="System Architecture" id="uav-arch-1">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- SENSORS group -->
+        <mxCell id="grp1" value="Tactical UAV Payload &amp; Telemetry" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="280" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="EO/IR Gimbal Camera&lt;br&gt;(1080p / 4K Feed)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="grp1">
+          <mxGeometry x="20" y="45" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="Flight Controller (ArduPilot / PX4)&lt;br&gt;• Barometric Alt&lt;br&gt;• WGS-84 GPS&lt;br&gt;• Gimbal IMU" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;" vertex="1" parent="grp1">
+          <mxGeometry x="20" y="125" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- EDGE_PIPELINE group -->
+        <mxCell id="grp2" value="Edge AI Targeting &amp; Vision Core" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="400" y="40" width="300" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="YOLOv9e / YOLOv8s Multi-Scale Detector&lt;br&gt;(24 Defense-Standard Classes)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="grp2">
+          <mxGeometry x="20" y="45" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="3D Ray-Projection Engine&lt;br&gt;Camera Matrix K + Euler Rotations → Ground Plane" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="grp2">
+          <mxGeometry x="20" y="130" width="260" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="Tactical HUD Renderer&lt;br&gt;• Corner Reticles&lt;br&gt;• Anti-Collision Badges&lt;br&gt;• Track History" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;" vertex="1" parent="grp2">
+          <mxGeometry x="20" y="215" width="260" height="85" as="geometry" />
+        </mxCell>
+
+        <!-- TELEMETRY_BRIDGE group -->
+        <mxCell id="grp3" value="MAVLink Bridge &amp; GCS Broadcast" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="760" y="40" width="300" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" value="MAVLink Telemetry Client&lt;br&gt;(UDP 14551 / Serial Telemetry)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="grp3">
+          <mxGeometry x="20" y="45" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" value="FFmpeg Low-Latency H.264 Encoder&lt;br&gt;(MPEG-TS over UDP 5600)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;" vertex="1" parent="grp3">
+          <mxGeometry x="20" y="135" width="260" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- GCS group -->
+        <mxCell id="grp4" value="Operator Ground Station" style="swimlane;whiteSpace=wrap;html=1;startSize=30;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="40" width="300" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" value="QGroundControl Video Display" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;" vertex="1" parent="grp4">
+          <mxGeometry x="20" y="45" width="260" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" value="Interactive Operator Control Window&lt;br&gt;• [Left-Click] Lock Target &amp; Strike&lt;br&gt;• [D] Declutter Mode&lt;br&gt;• [R] Record" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;" vertex="1" parent="grp4">
+          <mxGeometry x="20" y="125" width="260" height="95" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" value="RTSP / V4L2 / Video" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;" edge="1" parent="1" source="n1" target="n3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="MAVLink Packets" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;" edge="1" parent="1" source="n2" target="n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="Attitude &amp; Position" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;" edge="1" parent="1" source="n6" target="n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="Bounding Boxes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;" edge="1" parent="1" source="n3" target="n4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="Target GPS &amp; Range" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;" edge="1" parent="1" source="n4" target="n5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="Rendered Frames" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;" edge="1" parent="1" source="n5" target="n7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="Interactive Display" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;" edge="1" parent="1" source="n5" target="n9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="UDP 5600 Stream" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;" edge="1" parent="1" source="n7" target="n8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="GUIDED Waypoint Command" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;exitX=0;exitY=0.5;entryX=1;entryY=0.75;" edge="1" parent="1" source="n9" target="n6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="MAV_CMD_DO_REPOSITION" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=11;exitX=0;exitY=0.25;entryX=1;entryY=0.5;" edge="1" parent="1" source="n6" target="n2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

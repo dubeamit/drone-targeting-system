@@ -1,0 +1,49 @@
+# ==============================================================================
+# Git Ignore - Defense-Grade Drone Targeting & Ground Station System
+# ==============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Model Weights & Checkpoints (IP Protected - Do NOT distribute)
+*.pt
+*.pth
+*.onnx
+*.engine
+*.tflite
+weights/
+runs/
+
+# Training & Raw Datasets (~12GB local data)
+data/
+drone_vs_bird/
+incremental_dataset/
+roboflow_drone/
+VisDrone-dataset-python-toolkit/
+test_op/
+
+# Video Recordings & Raw Test Media (Large Binaries)
+videos/
+*.mp4
+*.avi
+*.mkv
+*.mov
+
+# Logs & Temporary Files
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+settings.json
+
+# IDE & Environment
+.idea/
+.vscode/
+.env
+venv/
+env/

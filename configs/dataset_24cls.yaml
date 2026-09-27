@@ -1,0 +1,34 @@
+# ==============================================================================
+# Aerial Defense & Tactical Drone Dataset (24 Classes)
+# ==============================================================================
+path: data/merged_drone_dataset
+train: images/train
+val: images/val
+test: images/test
+
+nc: 24
+names:
+  0: person
+  1: soldier
+  2: bicycle
+  3: motorcycle
+  4: car
+  5: van
+  6: truck
+  7: bus
+  8: tricycle
+  9: tank
+  10: military_vehicle
+  11: infantry_fighting_vehicle
+  12: armored_personnel_carrier
+  13: engineering_vehicle
+  14: assault_helicopter
+  15: transport_helicopter
+  16: assault_airplane
+  17: transport_airplane
+  18: anti_aircraft_vehicle
+  19: towed_artillery
+  20: self_propelled_artillery
+  21: others
+  22: drone
+  23: bird

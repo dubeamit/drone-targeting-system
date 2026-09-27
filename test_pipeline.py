@@ -352,7 +352,7 @@ def main():
     parser.add_argument("--model", default="v9e",
                         help="Model preset ('v9e', '26s', 'v8s') or path to .pt file.")
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold (e.g. 0.25)")
-    parser.add_argument("--imgsz", type=int, default=640, help="Inference resolution")
+    parser.add_argument("--imgsz", type=int, default=1024, help="Inference resolution (e.g. 640 for speed, 1024/1280 for tiny aerial targets)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="Inference device")
     parser.add_argument("--ardupilot", action="store_true", help="Connect live to ArduPilot SITL / MAVProxy on UDP 14551")
     parser.add_argument("--udp", default="udp://127.0.0.1:5600", help="UDP stream URL for QGroundControl")
@@ -418,18 +418,18 @@ def main():
         print("    To restore GPU instantly, run: sudo rmmod nvidia_uvm && sudo modprobe nvidia_uvm")
         print("!" * 75 + "\n")
 
-    # Exact Client Operator Resolution (1280x700 proven in qgc/inference_stream.py)
-    out_w, out_h = 1280, 700
+    # Standard 16:9 Operator & QGC Display Canvas (1280x720)
+    out_w, out_h = 1280, 720
 
-    # 6. Initialize Camera 3D Ray-Projection
+    # 6. Initialize Camera 3D Ray-Projection (using native camera optical parameters)
     projection = CameraProjection(
         native_width=in_w,
         native_height=in_h,
         fov_h_deg=70.0,
         fov_v_deg=45.0,
         max_zoom=10.0,
-        inference_width=out_w,
-        inference_height=out_h,
+        inference_width=in_w,
+        inference_height=in_h,
     )
 
     # 7. Initialize Telemetry (Mock vs ArduPilot SITL)
@@ -487,33 +487,50 @@ def main():
                         print("End of video stream.")
                         break
 
-                frame_resized = cv2.resize(frame, (out_w, out_h))
+                # 1. Aspect-Ratio Preserving Letterbox Canvas for Display & QGC Stream (1280x720)
+                in_h, in_w = frame.shape[:2]
+                scale = min(out_w / in_w, out_h / in_h)
+                new_w = int(round(in_w * scale))
+                new_h = int(round(in_h * scale))
+                pad_x = (out_w - new_w) // 2
+                pad_y = (out_h - new_h) // 2
 
-                # Fetch Telemetry
+                frame_scaled = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                canvas = np.zeros((out_h, out_w, 3), dtype=np.uint8)
+                canvas[pad_y:pad_y + new_h, pad_x:pad_x + new_w] = frame_scaled
+
+                # 2. Fetch Telemetry
                 tel = telemetry_client.get_state()
 
-                # Run YOLO Inference
-                results = model.predict(frame_resized, conf=args.conf, imgsz=args.imgsz, device=args.device, verbose=False)
+                # 3. Run Native YOLO Inference (avoids aspect-ratio distortion, preserves small targets)
+                results = model.predict(frame, conf=args.conf, imgsz=args.imgsz, device=args.device, verbose=False)
 
-                # Process Detections & Compute Ray-Projection GPS
+                # 4. Process Detections, Map Bounding Boxes to Display Canvas & Compute Ray-Projection GPS
                 new_targets = []
                 if results and len(results) > 0:
                     boxes = results[0].boxes
                     for box in boxes:
-                        xyxy = box.xyxy[0].cpu().numpy().astype(int).tolist()
+                        xyxy_native = box.xyxy[0].cpu().numpy().tolist()
                         cls_id = int(box.cls[0].cpu().numpy())
                         cls_name = model.names.get(cls_id, f"cls_{cls_id}")
                         conf_val = float(box.conf[0].cpu().numpy())
 
-                        # Ground contact point
-                        bx = (xyxy[0] + xyxy[2]) / 2.0
-                        by = float(xyxy[3])
+                        # Map bounding box coordinates onto 1280x720 Operator Display Canvas
+                        cx1 = int(round(xyxy_native[0] * scale + pad_x))
+                        cy1 = int(round(xyxy_native[1] * scale + pad_y))
+                        cx2 = int(round(xyxy_native[2] * scale + pad_x))
+                        cy2 = int(round(xyxy_native[3] * scale + pad_y))
+                        bbox_canvas = [cx1, cy1, cx2, cy2]
 
-                        gps_result = projection.pixel_to_gps(bx, by, tel, ground_elevation_msl=0.0)
+                        # Ground contact point in native camera coordinates for physically accurate 3D ray projection
+                        bx_native = (xyxy_native[0] + xyxy_native[2]) / 2.0
+                        by_native = float(xyxy_native[3])
+
+                        gps_result = projection.pixel_to_gps(bx_native, by_native, tel, ground_elevation_msl=0.0)
                         dist = gps_result["distance_m"] if gps_result else None
 
                         new_targets.append({
-                            "bbox": xyxy,
+                            "bbox": bbox_canvas,
                             "class_id": cls_id,
                             "class_name": cls_name,
                             "conf": conf_val,
@@ -556,7 +573,7 @@ def main():
             active_banner = status_banner if curr_time < banner_expiry else "Click any bounding box to lock target & guide drone"
 
             # Draw HUD
-            hud_frame = frame_resized.copy()
+            hud_frame = canvas.copy()
             draw_hud(hud_frame, tel, current_targets, active_lock_target, active_banner, fps_display, model_path.stem)
 
             # Update shared frame for dedicated QGC output thread

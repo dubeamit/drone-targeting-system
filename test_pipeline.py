@@ -241,7 +241,7 @@ def qgc_output_thread_func(encoder: subprocess.Popen, fps: float, width: int = 1
         stop_event.wait(max(0.0, interval - elapsed))
 
 
-def draw_hud(frame, tel, targets, active_target, banner_text, fps, model_name):
+def draw_hud(frame, tel, targets, active_target, banner_text, fps, model_name, is_recording=False):
     """Draws defense-grade HUD overlay with telemetry and targeting reticles."""
     h, w = frame.shape[:2]
     overlay = frame.copy()
@@ -260,6 +260,11 @@ def draw_hud(frame, tel, targets, active_target, banner_text, fps, model_name):
         f"TEL: {source_tag} | FPS: {fps:.1f}"
     )
     cv2.putText(frame, tel_str, (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 255, 200), 2, cv2.LINE_AA)
+
+    # Top-Right Recording Indicator
+    if is_recording:
+        cv2.circle(frame, (w - 82, 21), 6, (0, 0, 255), -1)
+        cv2.putText(frame, "REC", (w - 70, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 0, 255), 2, cv2.LINE_AA)
 
     # 2. Draw Bounding Boxes and Ray-Projected Target Info
     for t in targets:
@@ -325,6 +330,10 @@ def resolve_video_source(src_input: str) -> str:
     if in_videos.exists():
         return str(in_videos)
 
+    in_output = CURRENT_DIR / "output_video" / src_input
+    if in_output.exists():
+        return str(in_output)
+
     return src_input
 
 
@@ -348,7 +357,7 @@ def resolve_model_path(model_input: str) -> Path:
 def main():
     parser = argparse.ArgumentParser(description="Drone Targeting System - Comprehensive Test Pipeline")
     parser.add_argument("--source", default="drone_video.mp4",
-                        help="Video filename, path, webcam index (0), or RTSP URL. Auto-checks 'videos/' folder.")
+                        help="Video filename, path, webcam index (0), or RTSP URL. Auto-checks 'videos/' and 'output_video/'.")
     parser.add_argument("--model", default="v9e",
                         help="Model preset ('v9e', '26s', 'v8s') or path to .pt file.")
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold (e.g. 0.25)")
@@ -361,6 +370,8 @@ def main():
     parser.add_argument("--ffmpeg-bin", default="/usr/bin/ffmpeg", help="Path to system ffmpeg binary")
     parser.add_argument("--no-qgc", action="store_true", help="Disable QGC UDP stream broadcast")
     parser.add_argument("--no-loop", action="store_true", help="Do not loop video file when finished")
+    parser.add_argument("--save", action="store_true", help="Record and save HUD video to output_video/")
+    parser.add_argument("--save-path", default=None, help="Custom output filename or path for saved annotated video")
     args = parser.parse_args()
 
     # 1. Resolve Video Source
@@ -467,7 +478,46 @@ def main():
     print("\nControls:")
     print("  [Left-Click] Click on any detected object box to select target & send GUIDED waypoint")
     print("  [Space]      Pause / Resume video")
+    print("  [R]          Start / Stop Video Recording to output_video/")
     print("  [Q / Esc]    Quit test pipeline\n")
+
+    # 10. Video Recording / Writer
+    video_writer = None
+    recording = args.save
+    recorded_frames = 0
+    save_file_path = None
+
+    def get_or_create_writer():
+        nonlocal video_writer, save_file_path
+        if video_writer is not None:
+            return video_writer
+        out_dir = CURRENT_DIR / "output_video"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        if args.save_path:
+            p = Path(args.save_path)
+            if p.is_absolute():
+                save_file_path = p
+            elif str(p).startswith("output_video/"):
+                save_file_path = CURRENT_DIR / p
+            else:
+                save_file_path = out_dir / p
+        else:
+            src_stem = Path(resolved_source).stem if not source_is_index else f"cam_{source_val}"
+            save_file_path = out_dir / f"{src_stem}_{model_path.stem}_annotated.mp4"
+
+        save_file_path.parent.mkdir(parents=True, exist_ok=True)
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fps_out = float(fps_in) if (fps_in and fps_in > 0) else 30.0
+        video_writer = cv2.VideoWriter(str(save_file_path), fourcc, fps_out, (out_w, out_h))
+        if not video_writer.isOpened():
+            # Fallback to XVID / avc1 if mp4v fails
+            fourcc = cv2.VideoWriter_fourcc(*"avc1")
+            video_writer = cv2.VideoWriter(str(save_file_path), fourcc, fps_out, (out_w, out_h))
+        print(f"🎥 [VideoWriter] Initialized recording ({out_w}x{out_h} @ {fps_out:.1f} FPS) -> {save_file_path}\n")
+        return video_writer
+
+    if recording:
+        get_or_create_writer()
 
     frame_count = 0
     t_start = time.time()
@@ -574,7 +624,14 @@ def main():
 
             # Draw HUD
             hud_frame = canvas.copy()
-            draw_hud(hud_frame, tel, current_targets, active_lock_target, active_banner, fps_display, model_path.stem)
+            draw_hud(hud_frame, tel, current_targets, active_lock_target, active_banner, fps_display, model_path.stem, is_recording=recording)
+
+            # Record frame to file if active
+            if recording:
+                writer = get_or_create_writer()
+                if writer is not None and writer.isOpened():
+                    writer.write(hud_frame)
+                    recorded_frames += 1
 
             # Update shared frame for dedicated QGC output thread
             global latest_hud_frame
@@ -591,6 +648,17 @@ def main():
             elif key == ord(' '):
                 paused = not paused
                 print("[Status] Paused" if paused else "[Status] Resumed")
+            elif key == ord('r') or key == ord('R'):
+                recording = not recording
+                if recording:
+                    get_or_create_writer()
+                    status_banner = f"REC ACTIVE: {save_file_path.name}"
+                    banner_expiry = time.time() + 4.0
+                    print(f"\n🔴 [REC] Started recording to: {save_file_path}")
+                else:
+                    status_banner = f"REC PAUSED ({recorded_frames} frames)"
+                    banner_expiry = time.time() + 4.0
+                    print(f"\n⏸️  [REC] Paused recording ({recorded_frames} frames captured)")
 
     except KeyboardInterrupt:
         print("\nPipeline interrupted by user.")
@@ -598,6 +666,9 @@ def main():
     finally:
         stop_event.set()
         cap.release()
+        if video_writer is not None:
+            video_writer.release()
+            print(f"🎬 [VideoWriter] Successfully saved {recorded_frames} frames to: {save_file_path}")
         if qgc_thread:
             qgc_thread.join(timeout=2)
         if ffmpeg_proc:

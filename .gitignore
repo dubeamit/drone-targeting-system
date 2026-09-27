@@ -27,6 +27,7 @@ test_op/
 
 # Video Recordings & Raw Test Media (Large Binaries)
 videos/
+output_video/
 *.mp4
 *.avi
 *.mkv

@@ -428,6 +428,8 @@ def main():
     parser.add_argument("--conf", type=float, default=0.40, help="Initial confidence threshold (default: 0.40, adjust live with [ and ])")
     parser.add_argument("--mode", choices=["tactical", "full", "minimal"], default="tactical",
                         help="HUD Declutter Mode: 'tactical' (clean reticles & vehicle labels), 'minimal' (brackets only), 'full' (all labels)")
+    parser.add_argument("--show-all-labels", "--all-labels", action="store_true",
+                        help="Force all labels and confidence scores to appear on every detected bounding box (overrides decluttering)")
     parser.add_argument("--imgsz", type=int, default=1024, help="Inference resolution (e.g. 640 for speed, 1024/1280 for tiny aerial targets)")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="Inference device")
     parser.add_argument("--ardupilot", action="store_true", help="Connect live to ArduPilot SITL / MAVProxy on UDP 14551")
@@ -560,7 +562,7 @@ def main():
     print("  [Q / Esc]    Quit test pipeline\n")
 
     current_conf = float(args.conf)
-    declutter_mode = args.mode.upper()
+    declutter_mode = "FULL" if args.show_all_labels else args.mode.upper()
 
     # 10. Video Recording / Writer
     video_writer = None

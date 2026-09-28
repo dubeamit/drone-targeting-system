@@ -41,6 +41,18 @@ https://github.com/user-attachments/assets/a115b557-6f2b-48b4-92d2-96a6154b30d0
 
 ---
 
+### 3. Aerial Counter-UAS (C-UAS): Drone Interdiction & Sky Tracking
+*High-precision aerial tracking and classification of small, fast-moving hostile micro-UAVs against complex sky and cloud backgrounds.*
+
+https://github.com/user-attachments/assets/43729234-b3bd-4b2f-9ca5-cde6bb76c9a3
+
+> **C-UAS Highlights:**
+> * **Micro-UAV Discrimination:** Reliably detects and tracks small multirotor and fixed-wing drones across rapid aerial maneuvers.
+> * **Airspace Deconfliction:** Accurately separates drones from birds and airborne clutter at standoff ranges.
+> * **Real-Time Air-to-Air Guidance:** Feeds continuous line-of-sight tracking data for autonomous aerial interception.
+
+---
+
 ## 🏛️ System Architecture
 
 <p align="center">
